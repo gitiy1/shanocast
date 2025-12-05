@@ -1,5 +1,8 @@
 FROM beardedtek/shanocast-builder:base AS builder
 
+# Install findutils for batch file processing
+RUN dnf -y install findutils
+
 # Fix compiler warnings and create FFmpeg include symlinks
 RUN cd openscreen && \
     # Fix the ignored-attributes warning by directly modifying the file
@@ -17,21 +20,26 @@ RUN cd openscreen && \
 # Build binary
 RUN cd openscreen && \
     # Generate build files
-    # NOTE: treat_warnings_as_errors is not supported, so we handle warnings in the next step
     gn gen out/Default --args="is_debug=false use_custom_libcxx=false have_ffmpeg=true have_libsdl2=true cast_allow_developer_certificate=true is_clang=false" && \
-    # Fix toolchain.ninja
-    # 1. Fix include paths for dependencies
+    # -------------------------------------------------------------------------
+    # NUCLEAR OPTION: Fix flags globally across ALL ninja files
+    # -------------------------------------------------------------------------
+    # 1. Brutally replace -Werror with -Wno-error in EVERY generated ninja file.
+    #    This ensures third-party libs (zlib) also lose the -Werror flag.
+    find out/Default -name "*.ninja" -exec sed -i 's/-Werror/-Wno-error/g' {} + && \
+    # 2. Remove the Clang-specific flag that GCC fails on.
+    find out/Default -name "*.ninja" -exec sed -i 's/-Wno-unknown-warning-option//g' {} + && \
+    # 3. Inject stdint.h and legacy C support into the compiler command RULE directly.
+    #    We target the 'command =' line in toolchain.ninja.
+    #    We replace '${cflags}' with '${cflags} -include stdint.h ...' 
+    #    This ensures our flags are always appended to the command, overriding any target-specific flags.
+    sed -i 's/\${cflags}/& -include stdint.h -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
+    #    Also handle the case where it uses $cflags (without braces) just in case
+    sed -i 's/\$cflags/& -include stdint.h -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
+    # -------------------------------------------------------------------------
+    # Fix include paths for dependencies (ffmpeg)
     sed -i 's/-I..\/..\"/-I..\/..\"/g' out/Default/toolchain.ninja && \
     sed -i 's/-I..\/..\"/\"-I..\/..\" \"-I\/usr\/local\/include\"/' out/Default/toolchain.ninja && \
-    # 2. CRITICAL FIXES:
-    #    - Remove Clang-specific flag that GCC doesn't know
-    sed -i 's/-Wno-unknown-warning-option//g' out/Default/toolchain.ninja && \
-    #    - Replace -Werror with -Wno-error GLOBALLY (g flag)
-    sed -i 's/-Werror/-Wno-error/g' out/Default/toolchain.ninja && \
-    #    - Inject stdint.h (works for C and C++) instead of cstdint
-    #    - Disable old-style-definition warning (fixes zlib build)
-    #    - Disable deprecated-non-prototype (fixes other C legacy issues)
-    sed -i '/cflags =/ s/$/ -include stdint.h -Wno-ignored-attributes -Wno-maybe-uninitialized -Wno-old-style-definition -Wno-deprecated-non-prototype/' out/Default/toolchain.ninja && \
     # Build with ninja
     ninja -C out/Default cast_receiver && \
     cp out/Default/cast_receiver /build/shanocast
