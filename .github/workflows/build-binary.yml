@@ -1,0 +1,45 @@
+name: Build Shanocast Binary
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-and-extract:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Build Docker Images
+      run: |
+        chmod +x docker/build-images.sh
+        ./docker/build-images.sh
+      # 这里调用了你现有的构建脚本，它会负责构建 base 和 shanocast 镜像
+
+    - name: Extract Binary from Container
+      run: |
+        # 创建一个临时容器但不启动
+        docker create --name temp_shanocast beardedtek/shanocast:latest
+        
+        # 将二进制文件从容器内的 /app/shanocast 复制到当前工作目录
+        # 参考了 docker/Dockerfile 中的路径 和 extract-binary.sh 的逻辑
+        docker cp temp_shanocast:/app/shanocast ./shanocast
+        
+        # 清理临时容器
+        docker rm temp_shanocast
+        
+        # 验证文件是否存在并赋予执行权限
+        ls -l ./shanocast
+        chmod +x ./shanocast
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shanocast-linux-x86_64
+        path: ./shanocast
+        retention-days: 5
