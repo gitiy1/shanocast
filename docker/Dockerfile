@@ -25,17 +25,19 @@ RUN cd openscreen && \
     # NUCLEAR OPTION: Fix flags globally across ALL ninja files
     # -------------------------------------------------------------------------
     # 1. Brutally replace -Werror with -Wno-error in EVERY generated ninja file.
-    #    This ensures third-party libs (zlib) also lose the -Werror flag.
+    #    This ensures third-party libs (zlib, boringssl) also lose the -Werror flag.
     find out/Default -name "*.ninja" -exec sed -i 's/-Werror/-Wno-error/g' {} + && \
     # 2. Remove the Clang-specific flag that GCC fails on.
     find out/Default -name "*.ninja" -exec sed -i 's/-Wno-unknown-warning-option//g' {} + && \
-    # 3. Inject stdint.h and legacy C support into the compiler command RULE directly.
+    # 3. Inject flags into the compiler command RULE directly.
     #    We target the 'command =' line in toolchain.ninja.
-    #    We replace '${cflags}' with '${cflags} -include stdint.h ...' 
-    #    This ensures our flags are always appended to the command, overriding any target-specific flags.
-    sed -i 's/\${cflags}/& -include stdint.h -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
+    #    CRITICAL FIXES:
+    #    - -include stdint.h: Fixes missing uint8_t types in older C++ code.
+    #    - -D_GNU_SOURCE: Fixes 'implicit declaration of madvise/syscall' in boringssl caused by _XOPEN_SOURCE hiding them.
+    #    - -Wno-...: Suppress legacy C warnings that are now errors in GCC 14.
+    sed -i 's/\${cflags}/& -include stdint.h -D_GNU_SOURCE -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
     #    Also handle the case where it uses $cflags (without braces) just in case
-    sed -i 's/\$cflags/& -include stdint.h -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
+    sed -i 's/\$cflags/& -include stdint.h -D_GNU_SOURCE -Wno-old-style-definition -Wno-deprecated-non-prototype/g' out/Default/toolchain.ninja && \
     # -------------------------------------------------------------------------
     # Fix include paths for dependencies (ffmpeg)
     sed -i 's/-I..\/..\"/-I..\/..\"/g' out/Default/toolchain.ninja && \
