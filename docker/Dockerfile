@@ -24,10 +24,14 @@ RUN cd openscreen && \
     sed -i 's/-I..\/..\"/-I..\/..\"/g' out/Default/toolchain.ninja && \
     sed -i 's/-I..\/..\"/\"-I..\/..\" \"-I\/usr\/local\/include\"/' out/Default/toolchain.ninja && \
     # 2. CRITICAL FIXES:
-    #    - Replace -Werror with -Wno-error (disable treat warnings as errors)
-    #    - Inject -include cstdint to fix GCC 13+ build errors (missing uint8_t types)
-    #    - Add specific warning suppressions
-    sed -i 's/-Werror/-Wno-error -include cstdint -Wno-ignored-attributes -Wno-maybe-uninitialized/' out/Default/toolchain.ninja && \
+    #    - Remove Clang-specific flag that GCC doesn't know
+    sed -i 's/-Wno-unknown-warning-option//g' out/Default/toolchain.ninja && \
+    #    - Replace -Werror with -Wno-error GLOBALLY (g flag)
+    sed -i 's/-Werror/-Wno-error/g' out/Default/toolchain.ninja && \
+    #    - Inject stdint.h (works for C and C++) instead of cstdint
+    #    - Disable old-style-definition warning (fixes zlib build)
+    #    - Disable deprecated-non-prototype (fixes other C legacy issues)
+    sed -i '/cflags =/ s/$/ -include stdint.h -Wno-ignored-attributes -Wno-maybe-uninitialized -Wno-old-style-definition -Wno-deprecated-non-prototype/' out/Default/toolchain.ninja && \
     # Build with ninja
     ninja -C out/Default cast_receiver && \
     cp out/Default/cast_receiver /build/shanocast
